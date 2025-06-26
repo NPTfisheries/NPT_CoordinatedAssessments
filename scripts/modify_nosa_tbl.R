@@ -25,7 +25,7 @@ path_to_db = here("data/StreamNet API interface DES version 2024.1 - NPT.accdb")
 if(!is.null(path_to_db)) {
   source(here("R/connectNPTCAdbase.R"))
   con = connectNPTCAdbase(path_to_db)
-  nosa_tbl = DBI::dbReadTable(con, "NOSA")
+  nosa_tbl = DBI::dbReadTable(con, "NOSA-RK")
   pop_tbl = DBI::dbReadTable(con, "Populations")
   DBI::dbDisconnect(con)
   rm(con, connectNPTCAdbase)
@@ -40,9 +40,10 @@ sr_pop_tbl = pop_tbl %>%
   select(CommonName,
          TRT_POP_ID,
          Run,
-         NMFS_Population,
+         ESU_DPS,
          MajorPopGroup,
-         PopStatus) %>%
+         PopID,
+         RecoveryDomain) %>%
   arrange(CommonName, MajorPopGroup, TRT_POP_ID)
 
 # get coordinates for int and mrr sites
@@ -108,11 +109,73 @@ pop_to_nosa = pop_esc_df %>%
       ))
   ) %>%
   # remove habitat expansion estimates
-  select(-contains("hab_exp"))
+  select(-contains("hab_exp"), 
+         -incl_sites, 
+         -n_tags, 
+         -mpg, 
+         -mean,
+         -mode,
+         -sd,
+         -cv) %>%
+  # recode SFSMA to SFMAI
+  mutate(popid = if_else(popid == "SFSMA", "SFMAI", popid)) %>%
+  # join population information from CA population table
+  mutate(species = recode(species, "Chinook" = "Chinook salmon")) %>%
+  left_join(sr_pop_tbl,
+            by = c("species" = "CommonName", "popid" = "TRT_POP_ID")) %>%
+  # grab a lat/lon from the first site in pop_sites
+  mutate(site_code = str_extract(pop_sites, "^[^,]+")) %>%
+  left_join(site_ll %>%
+              st_drop_geometry()) %>%
+  select(-site_code) %>%
+  # rename some columns to match nosa_tbl
+  rename(CommonName = species,
+         SpawningYear = spawn_yr,
+         CommonPopName = popid,
+         NOSAIJ = median,
+         NOSAIJLowerLimit = lower95ci,
+         NOSAIJUpperLimit = upper95ci) %>%
+  # add PopFit info
+  mutate(PopFit = if_else(p_qrf_hab >= 0.9, "Same", "Portion"),
+         PopFitNotes = paste0(round(p_qrf_hab * 100, 1), "; Estimate reflects escapement to PTAGIS sites: ", pop_sites,". Percent population coverage estimated using QRF (See et al. 2021) available spawning habitat dataset. PopFit determined to be 'Same' if greater than or equal to 90.0. Additional Notes: ", notes)) %>%
+  select(-pop_sites, -p_qrf_hab, -notes) %>%
+  # add non-overlapping columns from nosa_tbl (safe method)
+  {
+    join_keys <- c("CommonName", "CommonPopName", "SpawningYear")
+    cols_to_add <- setdiff(names(nosa_tbl), c(names(.), join_keys))
+    left_join(., select(nosa_tbl %>% mutate(CommonPopName = if_else(CommonPopName == "SFSMA", "SFMAI", CommonPopName)), all_of(join_keys), all_of(cols_to_add)), by = join_keys)
+  } %>%
+  # fill in some columns unique to each species and population
+  group_by(CommonName, CommonPopName) %>%
+  fill(TimeSeriesID, WaterBody, .direction = "downup") %>%
+  ungroup() %>%
+  # fix ProtMethName and CompilerRecordID
+  mutate(ProtMethName = "PIT tag Based Escapement Estimation Above Lower Granite Dam v1.0") %>%
+  # fill in some remaining columns
+  fill(EstimateType, 
+       ContactAgency, 
+       MethodNumber,
+       BestValue,
+       NOSAIJAlpha,
+       ProtMethURL,
+       NullRecord,
+       DataStatus,
+       MeasureLocation,
+       ContactPersonFirst,
+       ContactPersonLast,
+       ContactPhone,
+       ContactEmail,
+       MetaComments,
+       SubmitAgency,
+       Publish,
+       .direction = "downup") %>%
+  # re-fill CompilerRecordID
+  mutate(CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear)) %>%
+  # finally, ensure columns are in the same order as the original nosa_tbl
+  select(any_of(names(nosa_tbl)))
+  
 
 
-  
-  
-  
-  mutate(species = recode(species, "Chinook" = "Chinook salmon"))
+
+
 
