@@ -28,7 +28,6 @@ if(!is.null(path_to_db)) {
   nosa_tbl = DBI::dbReadTable(con, "NOSA-RK")
   pop_tbl = DBI::dbReadTable(con, "Populations")
   DBI::dbDisconnect(con)
-  rm(con, connectNPTCAdbase)
 }
 
 # clean up pop_tbl
@@ -71,7 +70,7 @@ site_esc_df = list.files("C:/Git/SnakeRiverFishStatus/output/syntheses",
   map_dfr(~ read_excel(.x, sheet = "Site_Esc"))
 
 # prep pop_esc_df to export in same format as nosa_tbl
-pop_to_nosa = pop_esc_df %>%
+pop_esc_to_nosa = pop_esc_df %>%
   # CRSFC-s
   filter(popid != "CRSFC-s") %>%
   mutate(
@@ -93,22 +92,26 @@ pop_to_nosa = pop_esc_df %>%
   bind_rows(
     site_esc_df %>%
       filter(site %in% c("PAHH", "RAPH")) %>%
+      filter(!(species == "Steelhead" & site == "RAPH")) %>%
       select(-site_operational) %>%
       rename(pop_sites = site) %>%
       mutate(mpg = case_when(
         species == "Chinook"   & pop_sites == "RAPH" ~ "South Fork Salmon River",
         species == "Chinook"   & pop_sites == "PAHH" ~ "Upper Salmon River",
-        species == "Steelhead" & pop_sites == "RAPH" ~ "Salmon River",
         species == "Steelhead" & pop_sites == "PAHH" ~ "Salmon River"
       )) %>%
       mutate(popid = case_when(
         species == "Chinook"   & pop_sites == "RAPH" ~ "SRLSR",
         species == "Chinook"   & pop_sites == "PAHH" ~ "SRPAH",
-        species == "Steelhead" & pop_sites == "RAPH" ~ "SRLSR-s",
         species == "Steelhead" & pop_sites == "PAHH" ~ "SRPAH-s"
+      )) %>%
+      mutate(p_qrf_hab = case_when(
+        species == "Chinook"   & pop_sites == "RAPH" ~ 0.00,
+        species == "Chinook"   & pop_sites == "PAHH" ~ 0.00,
+        species == "Steelhead" & pop_sites == "PAHH" ~ 0.00
       ))
   ) %>%
-  # remove habitat expansion estimates
+  # remove habitat expansion estimates and columns not used in coordinated assessments
   select(-contains("hab_exp"), 
          -incl_sites, 
          -n_tags, 
@@ -137,7 +140,8 @@ pop_to_nosa = pop_esc_df %>%
          NOSAIJUpperLimit = upper95ci) %>%
   # add PopFit info
   mutate(PopFit = if_else(p_qrf_hab >= 0.9, "Same", "Portion"),
-         PopFitNotes = paste0(round(p_qrf_hab * 100, 1), "; Estimate reflects escapement to PTAGIS sites: ", pop_sites,". Percent population coverage estimated using QRF (See et al. 2021) available spawning habitat dataset. PopFit determined to be 'Same' if greater than or equal to 90.0. Additional Notes: ", notes)) %>%
+         PopFitNotes = paste0(round(p_qrf_hab * 100, 1), "; Estimate reflects escapement to PTAGIS sites: ", pop_sites,". Percent pop coverage estimated using redd QRF (See et al. 2021) dataset. PopFit 'Same' if >= 90.0."),
+         Comments = notes) %>%
   select(-pop_sites, -p_qrf_hab, -notes) %>%
   # add non-overlapping columns from nosa_tbl (safe method)
   {
@@ -172,10 +176,33 @@ pop_to_nosa = pop_esc_df %>%
   # re-fill CompilerRecordID
   mutate(CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear)) %>%
   # finally, ensure columns are in the same order as the original nosa_tbl
-  select(any_of(names(nosa_tbl)))
-  
+  select(any_of(names(nosa_tbl))) %>%
+  mutate(across(
+    names(.)[names(.) %in% names(nosa_tbl)],
+    ~ {
+      colname = cur_column()
+      target_type = class(nosa_tbl[[colname]])[1]
+      # coerce to same class as in nosa_tbl
+      match.fun(paste0("as.", target_type))(.)
+    }
+  ))
 
+#------------------
+# replace NOSA table in Access DB (for unknown reasons, I needed to use RODBC instead of DBI to write the table)
+library(RODBC)
 
+# re-connect to access db
+channel = odbcConnectAccess2007(here("data/StreamNet API interface DES version 2024.1 - NPT.accdb"))
 
+# remove the existing NOSA table (I previously copied the original over to a NOSA-RK table)
+sqlDrop(channel, "NOSA", errors = FALSE)
+
+# write pop_esc_to_nosa to db
+sqlSave(channel, pop_esc_to_nosa, tablename = "NOSA", rownames = FALSE)
+
+# dis-connect access db
+close(channel)
+
+### END SCRIPT
 
 
