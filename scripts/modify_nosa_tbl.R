@@ -26,6 +26,7 @@ if(!is.null(path_to_db)) {
   source(here("R/connectNPTCAdbase.R"))
   con = connectNPTCAdbase(path_to_db)
   nosa_tbl = DBI::dbReadTable(con, "NOSA-RK")
+  npt_dbo_nosa_tbl = DBI::dbReadTable(con, "dbo_NOSA")
   pop_tbl = DBI::dbReadTable(con, "Populations")
   DBI::dbDisconnect(con)
 }
@@ -91,8 +92,8 @@ pop_esc_to_nosa = pop_esc_df %>%
   # add estimates from RAPH and PAHH
   bind_rows(
     site_esc_df %>%
-      filter(site %in% c("PAHH", "RAPH")) %>%
-      filter(!(species == "Steelhead" & site == "RAPH")) %>%
+      filter(site %in% c("PAHH", "RAPH") &
+               !(species == "Steelhead" & site == "RAPH")) %>%
       select(-site_operational) %>%
       rename(pop_sites = site) %>%
       mutate(mpg = case_when(
@@ -106,9 +107,9 @@ pop_esc_to_nosa = pop_esc_df %>%
         species == "Steelhead" & pop_sites == "PAHH" ~ "SRPAH-s"
       )) %>%
       mutate(p_qrf_hab = case_when(
-        species == "Chinook"   & pop_sites == "RAPH" ~ 0.00,
-        species == "Chinook"   & pop_sites == "PAHH" ~ 0.00,
-        species == "Steelhead" & pop_sites == "PAHH" ~ 0.00
+        species == "Chinook"   & pop_sites == "RAPH" ~ 0.26,
+        species == "Chinook"   & pop_sites == "PAHH" ~ 0.32,
+        species == "Steelhead" & pop_sites == "PAHH" ~ 0.99
       ))
   ) %>%
   # remove habitat expansion estimates and columns not used in coordinated assessments
@@ -153,8 +154,13 @@ pop_esc_to_nosa = pop_esc_df %>%
   group_by(CommonName, CommonPopName) %>%
   fill(TimeSeriesID, WaterBody, .direction = "downup") %>%
   ungroup() %>%
-  # fix ProtMethName and CompilerRecordID
+  # fix ProtMethName
   mutate(ProtMethName = "PIT tag Based Escapement Estimation Above Lower Granite Dam v1.0") %>%
+  # add EmigrationTiming based on species %>%
+  mutate(EscapementTiming = case_when(
+    CommonName == "Chinook salmon" ~ "Jun-Oct",
+    CommonName == "Steelhead" ~ "Feb-Jun"
+  )) %>%
   # fill in some remaining columns
   fill(EstimateType, 
        ContactAgency, 
@@ -175,6 +181,9 @@ pop_esc_to_nosa = pop_esc_df %>%
        .direction = "downup") %>%
   # re-fill CompilerRecordID
   mutate(CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear)) %>%
+  # remove records that already exist in npt_dbo_nosa_tbl
+  anti_join(npt_dbo_nosa_tbl,
+            by = c("PopID", "PopFit", "WaterBody", "SpawningYear", "ContactAgency", "MethodNumber")) %>%
   # finally, ensure columns are in the same order as the original nosa_tbl
   select(any_of(names(nosa_tbl))) %>%
   mutate(across(
@@ -203,6 +212,11 @@ sqlSave(channel, pop_esc_to_nosa, tablename = "NOSA", rownames = FALSE)
 # dis-connect access db
 close(channel)
 
+# NOTE: After pushing pop_esc_to_nosa to the NOSA table in the access database, I needed to make the following changes to data formats
+# in the table:
+# EscapementLong: Field Size = Single
+# EscapementLat: Field Size = Single
+# NOSAIJAlpha: Field Size = Single
+# CompilerRecordID: Required = Yes, Indexed = Yes (No Duplicates)
+
 ### END SCRIPT
-
-
