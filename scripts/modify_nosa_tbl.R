@@ -181,9 +181,15 @@ pop_esc_to_nosa = pop_esc_df %>%
        .direction = "downup") %>%
   # re-fill CompilerRecordID
   mutate(CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear)) %>%
-  # remove records that already exist in npt_dbo_nosa_tbl
-  anti_join(npt_dbo_nosa_tbl,
+  # overwrite my ID column for records that already exist in the npt_dbo_nosa_tbl
+  left_join(npt_dbo_nosa_tbl %>%
+              select(ID_new = ID, all_of(c("PopID", "PopFit", "WaterBody", "SpawningYear", "ContactAgency", "MethodNumber"))),
             by = c("PopID", "PopFit", "WaterBody", "SpawningYear", "ContactAgency", "MethodNumber")) %>%
+  mutate(ID = coalesce(ID_new, ID)) %>%
+  select(-ID_new) %>%
+  # remove records that already exist in npt_dbo_nosa_tbl
+  # anti_join(npt_dbo_nosa_tbl,
+  #           by = c("PopID", "PopFit", "WaterBody", "SpawningYear", "ContactAgency", "MethodNumber")) %>%
   # finally, ensure columns are in the same order as the original nosa_tbl
   select(any_of(names(nosa_tbl))) %>%
   mutate(across(
