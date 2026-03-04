@@ -237,6 +237,22 @@ srfs_to_cax = pop_esc_df %>%
   # as default, set BestValue to be "Yes" for "Same" estimates
   mutate(BestValue = if_else(PopFit == "Same", "Yes", "No")) %>%
   select(-p_qrf, -site_note, -qrf_note) %>%
+  # add ID for records to update or delete (i.e., already in CAX)
+  full_join(npt_cax_nosa %>%
+              select(CommonName = commonname,
+                     CommonPopName = commonpopname,
+                     SpawningYear = spawningyear,
+                     MetaComments = metacomments,
+                     ID = id),
+            by = c("CommonName", "CommonPopName", "SpawningYear", "MetaComments")) %>%
+  filter(MetaComments %in% c("STADEM and DABOM", "STADEM, DABOM, and QRF")) %>%
+  # provide my call for add, update, or delete
+  mutate(StatusMA = case_when(
+    is.na(NOSAIJ)  & !is.na(ID) ~ "DELETE",
+    !is.na(NOSAIJ) & !is.na(ID) ~ "UPDATE",
+    !is.na(NOSAIJ) & is.na(ID)  ~ "NEW"
+  )) %>%
+  select(StatusMA, everything()) %>%
   # add protocol fields
   mutate(
     ProtMethName = case_when(
@@ -356,6 +372,7 @@ comp_df = srfs_to_cax %>%
              CommonPopName = commonpopname,
              SpawningYear = spawningyear,
              MetaComments = metacomments,
+             ID = id,
              NOSAIJ = nosaij) %>%
       rename(NOSAIJ_CAX = NOSAIJ),
     by = c("CommonName", "CommonPopName", "SpawningYear", "MetaComments")
