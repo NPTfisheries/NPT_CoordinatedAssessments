@@ -331,7 +331,7 @@ srfs_to_cax_qc = srfs_to_cax %>%
   mutate(
     Comments = if_else(
       CommonPopName %in% c("CRSFC-s", "SCUMA") & pop_sites == "SC1",
-      paste0("Estimate reflects escapement past SC1 which occurs downstream of the population boundary. ", Comments),
+      "Estimate reflects escapement past SC1 which occurs downstream of the population boundary. ",
       Comments
     )
   )
