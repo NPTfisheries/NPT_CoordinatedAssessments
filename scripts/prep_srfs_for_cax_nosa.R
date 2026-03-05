@@ -275,7 +275,7 @@ srfs_to_cax = pop_esc_df %>%
     !is.na(NOSAIJ) & !is.na(ID)                       ~ "UPDATE",
     !is.na(NOSAIJ) & is.na(ID)                        ~ "NEW"
   )) %>%
-  select(-contactemail, StatusMA, everything()) %>%
+  select(StatusMA, everything(), -contactemail) %>%
   # add protocol fields
   mutate(
     ProtMethName = case_when(
@@ -307,7 +307,7 @@ srfs_to_cax = pop_esc_df %>%
          SubmitAgency       = "NPT",
          HLI                = "NOSA",
          NullRecord         = "No",
-         DataStatus         = "Draft",
+         DataStatus         = "Final",
          IndicatorLocation  = "npt-cdms.nezperce.org",
          MetricLocation     = "npt-cdms.nezperce.org",
          MeasureLocation    = "npt-cdms.nezperce.org",
@@ -346,7 +346,6 @@ srfs_to_cax = pop_esc_df %>%
 #----------------------------------------
 # some final modifications based on QA/QC
 srfs_to_cax_qc = srfs_to_cax %>%
-  select(StatusMA, everything()) %>%
   # in any case where the "Portion" estimate is 0, I don't want to report the expanded estimate.
   group_by(CommonName, CommonPopName, SpawningYear) %>%
   mutate(portion0 = any(PopFit == "Portion" & NOSAIJ == 0, na.rm = TRUE)) %>%
@@ -371,7 +370,8 @@ srfs_to_cax_qc = srfs_to_cax %>%
 source("R/nosa_des_spec.R")
 
 # re-order & add missing columns
-srfs_to_cax_final = apply_cax_des_col_order(srfs_to_cax_qc, nosa_des_spec)
+srfs_to_cax_final = apply_cax_des_col_order(srfs_to_cax_qc, nosa_des_spec) %>%
+  select(StatusMA, everything())
 
 # QC column types
 qc_report = qc_against_des_spec(srfs_to_cax_final, nosa_des_spec)
