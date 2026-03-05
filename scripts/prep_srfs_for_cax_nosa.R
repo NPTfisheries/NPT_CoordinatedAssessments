@@ -131,7 +131,7 @@ age_p_for_cax = age_p_df %>%
 source("R/waterbody_lookup.R")
 
 # the threshhold on which to consider a pop fully monitored by IPTDS, what do we want to set this at? 
-threshhold = 0.99
+threshhold = 0.95
 
 # prep SnakeRiverFishStatus results for CAX NOSA table
 srfs_to_cax = pop_esc_df %>%
@@ -308,7 +308,6 @@ srfs_to_cax = pop_esc_df %>%
          HLI                = "NOSA",
          NullRecord         = "No",
          DataStatus         = "Draft",
-         # do IndicatorLocation, MetricLocation, MeasureLocation need to be changed to something other than CDMS?
          IndicatorLocation  = "npt-cdms.nezperce.org",
          MetricLocation     = "npt-cdms.nezperce.org",
          MeasureLocation    = "npt-cdms.nezperce.org",
@@ -380,7 +379,7 @@ qc_report = qc_against_des_spec(srfs_to_cax_final, nosa_des_spec)
 # NOTE: Need to remove pop_sites, maybe among other columns at the end?, before final export
 
 # write to excel, if needed
-write_xlsx(srfs_to_cax_qc, path = paste0("output/SnakeRiverFishStatus_Results_4_CAX_NOSA_", Sys.Date(), ".xlsx"))
+write_xlsx(srfs_to_cax_final, path = paste0("output/SnakeRiverFishStatus_Results_4_CAX_NOSA_", Sys.Date(), ".xlsx"))
 
 #----------------------------------------------------------------------
 # compare prepped SRFS results to existing CAX records submitted by NPT
