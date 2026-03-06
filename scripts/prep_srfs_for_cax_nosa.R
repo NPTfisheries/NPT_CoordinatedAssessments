@@ -71,8 +71,27 @@ cax_nosa_meta = rcax_hli("NOSA", type = "colnames")
 # retrieve NOSA table, up to 10,000 records (by default, only retrieves 1,000)
 cax_nosa = rcax_hli("NOSA", qlist = list(limit = 10000))
 
+#----------------------------------------------------------------
+# trim to records submitted by NPT and flag older submittals (by group) for deletion
 npt_cax_nosa = cax_nosa %>%
   filter(submitagency == "NPT")
+
+npt_cax_nosa_flagged = npt_cax_nosa %>%
+  transmute(
+    CommonName    = commonname,
+    CommonPopName = commonpopname,
+    SpawningYear  = spawningyear,
+    MetaComments  = metacomments,
+    ID            = id,
+    lastupdated   = as.Date(lastupdated, format = "%Y/%m/%d")
+  ) %>%
+  group_by(CommonName, CommonPopName, SpawningYear, MetaComments) %>%
+  arrange(lastupdated, .by_group = TRUE) %>%
+  mutate(
+    n_records = n(),
+    delete_old = n_records > 1 & row_number() < n()
+  ) %>%
+  ungroup()
 
 # datasets available in CAX
 cax_datasets = rcax_datasets()
@@ -162,41 +181,41 @@ srfs_to_cax = pop_esc_df %>%
   filter(!str_detect(CommonPopName, "/"),                            ### we could submit these as PopFit = Multiple, which would require additional work
          !str_detect(CommonPopName, "SNTUC")) %>%
   # add estimates from RAPH, PAHH, and SALEFT. These will only be unexpanded
-  bind_rows(
-    site_esc_df %>%
-      filter(site %in% c("PAHH", "RAPH", "SALEFT")) %>%
-      transmute(
-        pop_sites = site,
-        CommonName = species,
-        SpawningYear = spawn_yr,
-        median, lower95ci, upper95ci,
-        notes,
-        no_expand = TRUE
-      )
-  ) %>%
-  mutate(
-    no_expand = coalesce(no_expand, FALSE),
-    CommonPopName = case_when(
-      CommonName == "Chinook"   & pop_sites == "PAHH"   ~ "SRPAH",
-      CommonName == "Chinook"   & pop_sites == "RAPH"   ~ "SRLSR",
-      CommonName == "Chinook"   & pop_sites == "SALEFT" ~ "SREFS",
-      CommonName == "Steelhead" & pop_sites == "PAHH"   ~ "SRPAH-s",
-      CommonName == "Steelhead" & pop_sites == "RAPH"   ~ "SRLSR-s",
-      CommonName == "Steelhead" & pop_sites == "SALEFT" ~ "SREFS-s",
-      TRUE ~ CommonPopName
-    ),
-    p_qrf = case_when(
-      CommonName == "Chinook"   & pop_sites == "PAHH"   ~ 0.9743887,
-      CommonName == "Chinook"   & pop_sites == "RAPH"   ~ 0.0000000,
-      CommonName == "Chinook"   & pop_sites == "SALEFT" ~ 0.5085837,
-      CommonName == "Steelhead" & pop_sites == "PAHH"   ~ 0.9774971,
-      CommonName == "Steelhead" & pop_sites == "RAPH"   ~ 0.1277831,
-      CommonName == "Steelhead" & pop_sites == "SALEFT" ~ 0.4114101,
-      TRUE ~ p_qrf
-    ),
-    Comments = coalesce(Comments, notes)
-  ) %>%
-  select(-notes) %>%
+  # bind_rows(
+  #   site_esc_df %>%
+  #     filter(site %in% c("PAHH", "RAPH", "SALEFT")) %>%
+  #     transmute(
+  #       pop_sites = site,
+  #       CommonName = species,
+  #       SpawningYear = spawn_yr,
+  #       median, lower95ci, upper95ci,
+  #       notes,
+  #       no_expand = TRUE
+  #     )
+  # ) %>%
+  # mutate(
+  #   no_expand = coalesce(no_expand, FALSE),
+  #   CommonPopName = case_when(
+  #     CommonName == "Chinook"   & pop_sites == "PAHH"   ~ "SRPAH",
+  #     CommonName == "Chinook"   & pop_sites == "RAPH"   ~ "SRLSR",
+  #     CommonName == "Chinook"   & pop_sites == "SALEFT" ~ "SREFS",
+  #     CommonName == "Steelhead" & pop_sites == "PAHH"   ~ "SRPAH-s",
+  #     CommonName == "Steelhead" & pop_sites == "RAPH"   ~ "SRLSR-s",
+  #     CommonName == "Steelhead" & pop_sites == "SALEFT" ~ "SREFS-s",
+  #     TRUE ~ CommonPopName
+  #   ),
+  #   p_qrf = case_when(
+  #     CommonName == "Chinook"   & pop_sites == "PAHH"   ~ 0.9743887,
+  #     CommonName == "Chinook"   & pop_sites == "RAPH"   ~ 0.0000000,
+  #     CommonName == "Chinook"   & pop_sites == "SALEFT" ~ 0.5085837,
+  #     CommonName == "Steelhead" & pop_sites == "PAHH"   ~ 0.9774971,
+  #     CommonName == "Steelhead" & pop_sites == "RAPH"   ~ 0.1277831,
+  #     CommonName == "Steelhead" & pop_sites == "SALEFT" ~ 0.4114101,
+  #     TRUE ~ p_qrf
+  #   ),
+  #   Comments = coalesce(Comments, notes)
+  # ) %>%
+  # select(-notes) %>%
   # attach population metadata from sr_pop_df
   mutate(CommonName = recode(CommonName, "Chinook" = "Chinook Salmon")) %>%
   left_join(sr_pop_df, by = c("CommonName", "CommonPopName")) %>%
@@ -212,7 +231,7 @@ srfs_to_cax = pop_esc_df %>%
     bind_rows(
       df,
       df %>%
-        filter(p_qrf < threshhold, PopFit == "Portion", !no_expand) %>%
+        filter(p_qrf < threshhold, PopFit == "Portion") %>%
         mutate(median       = median_exp,
                lower95ci    = lower95ci_exp,
                upper95ci    = upper95ci_exp,
@@ -221,7 +240,7 @@ srfs_to_cax = pop_esc_df %>%
     )
   } %>%
   # expanded ests no longer needed
-  select(-contains("_exp"), -no_expand) %>%
+  select(-contains("_exp")) %>%
   # assign MethodNumber
   mutate(MethodNumber = case_when(
     MetaComments == "STADEM and DABOM"       ~ 2,
@@ -244,38 +263,57 @@ srfs_to_cax = pop_esc_df %>%
   )) %>%
   # add PopFitNotes
   mutate(
-    p_qrf       = round(p_qrf * 100, 1),
-    site_note   = paste0("Estimate reflects PTAGIS site(s): ", pop_sites, " which monitor an estimated ", p_qrf, "% of available habitat."),
+    #p_qrf       = round(p_qrf * 100, 1),
+    site_note   = paste0("Estimate reflects PTAGIS site(s): ", pop_sites, " which monitor an estimated ", round(p_qrf * 100, 1), "% of available habitat."),
     qrf_note    = "Percent of available habitat monitored estimated using redd QRF dataset (See et al. 2021).",
     PopFitNotes = case_when(
-      MetaComments == "STADEM and DABOM"       & PopFit == "Same"    ~ paste0(site_note, "PopFit considered 'Same' because >= ", threshhold * 100, "%. ", qrf_note),
-      MetaComments == "STADEM and DABOM"       & PopFit == "Portion" ~ paste0(site_note, "PopFit considered 'Portion' because < ", threshhold * 100, "%. ", qrf_note),
-      MetaComments == "STADEM, DABOM, and QRF" & PopFit == "Same"    ~ paste0(site_note, "PopFit considered 'Same' because 'Portion' escapement estimate was expanded to account for unmonitored habitat."),
+      MetaComments == "STADEM and DABOM"       & PopFit == "Same"    ~ paste0(site_note, " PopFit considered 'Same' because >= ", threshhold * 100, "%. ", qrf_note),
+      MetaComments == "STADEM and DABOM"       & PopFit == "Portion" ~ paste0(site_note, " PopFit considered 'Portion' because < ", threshhold * 100, "%. ", qrf_note),
+      MetaComments == "STADEM, DABOM, and QRF" & PopFit == "Same"    ~ paste0("Estimate reflects full population (100% of available habitat) as 'Portion' estimate was expanded by ", round(1 / p_qrf, 2), " to account for unmonitored habitat."),
       TRUE ~ NA_character_
     )
   ) %>%
   # as default, set BestValue to be "Yes" for "Same" estimates
   mutate(BestValue = if_else(PopFit == "Same", "Yes", "No")) %>%
   select(-p_qrf, -site_note, -qrf_note) %>%
-  # add ID for records to update or delete (i.e., already in CAX)
-  full_join(npt_cax_nosa %>%
-              select(CommonName = commonname,
-                     CommonPopName = commonpopname,
-                     SpawningYear = spawningyear,
-                     MetaComments = metacomments,
-                     ID = id,
-                     contactemail),
+  full_join(npt_cax_nosa_flagged %>%
+              select(CommonName,
+                     CommonPopName,
+                     SpawningYear,
+                     MetaComments,
+                     ID,
+                     delete_old),
             by = c("CommonName", "CommonPopName", "SpawningYear", "MetaComments"),
             relationship = "many-to-many") %>%
-  filter(MetaComments %in% c("STADEM and DABOM", "STADEM, DABOM, and QRF")) %>%
-  # provide my call for add, update, or delete
-  mutate(StatusMA = case_when(
-    contactemail == "ricko@nezperce.org" & !is.na(ID) ~ "DELETE",
-    is.na(NOSAIJ)  & !is.na(ID)                       ~ "DELETE",
-    !is.na(NOSAIJ) & !is.na(ID)                       ~ "UPDATE",
-    !is.na(NOSAIJ) & is.na(ID)                        ~ "NEW"
-  )) %>%
-  select(StatusMA, everything(), -contactemail) %>%
+  group_by("CommonName", "CommonPopName", "SpawningYear", "MetaComments") %>%
+  mutate(
+    StatusMA = case_when(
+      delete_old     & !is.na(ID) ~ "DELETE",
+      is.na(NOSAIJ)  & !is.na(ID) ~ "DELETE",
+      !is.na(NOSAIJ) & !is.na(ID) ~ "UPDATE",
+      !is.na(NOSAIJ) & is.na(ID)  ~ "NEW"
+    )
+  ) %>%
+  select(StatusMA, everything(), -delete_old) %>%
+  # add ID for records to update or delete (i.e., already in CAX)
+  # full_join(npt_cax_nosa %>%
+  #             select(CommonName = commonname,
+  #                    CommonPopName = commonpopname,
+  #                    SpawningYear = spawningyear,
+  #                    MetaComments = metacomments,
+  #                    ID = id,
+  #                    contactemail),
+  #           by = c("CommonName", "CommonPopName", "SpawningYear", "MetaComments"),
+  #           relationship = "many-to-many") %>%
+  # filter(MetaComments %in% c("STADEM and DABOM", "STADEM, DABOM, and QRF")) %>%
+  # # provide my call for add, update, or delete
+  # mutate(StatusMA = case_when(
+  #   contactemail == "ricko@nezperce.org" & !is.na(ID) ~ "DELETE",
+  #   is.na(NOSAIJ)  & !is.na(ID)                       ~ "DELETE",
+  #   !is.na(NOSAIJ) & !is.na(ID)                       ~ "UPDATE",
+  #   !is.na(NOSAIJ) & is.na(ID)                        ~ "NEW"
+  # )) %>%
+  # select(StatusMA, everything(), -contactemail) %>%
   # add protocol fields
   mutate(
     ProtMethName = case_when(
