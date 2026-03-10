@@ -137,19 +137,6 @@ apply_cax_des_col_order <- function(df, nosa_des_spec) {
   df %>% dplyr::select(dplyr::any_of(nosa_fields), dplyr::everything())
 }
 
-# apply_cax_des_col_order = function(df, nosa_des_spec) {
-#   nosa_fields = nosa_des_spec$field
-#   
-#   # add missing fields as NA
-#   missing = setdiff(nosa_fields, names(df))
-#   if (length(missing) > 0) {
-#     df[missing] = ""
-#   }
-#   
-#   # reorder columns: nosa order first, then any extra columns I had
-#   df %>%  select(any_of(nosa_fields), everything())
-# }
-
 # function to qc columns against cax data exchange standards
 qc_against_des_spec = function(df, nosa_des_spec) {
   nosa_fields = nosa_des_spec$field

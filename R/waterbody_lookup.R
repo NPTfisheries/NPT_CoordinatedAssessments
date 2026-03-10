@@ -1,8 +1,8 @@
 library(tibble)
 
 # lookup table: pop_sites -> WaterBody
-waterbody_lu <- tribble(
-  ~pop_sites,        ~WaterBody,
+waterbody_sites_lu = tribble(
+  ~pop_sites,        ~WaterBody_site,
   "ACB",             "Asotin Creek",
   "ACM",             "Asotin Creek",
   "BRC",             "Bear Valley Creek",
@@ -44,6 +44,10 @@ waterbody_lu <- tribble(
   "WEN",             "Wenaha River",
   "WB1",             "Whitebird Creek",
   "YFK",             "Yankee Fork Salmon River",
+  "PAHH",            "Pahsimeroi River",
+  "RAPH",            "Rapid River",
+  "SALEFT",          "East Fork Salmon River",
+  "SAWT",            "upper Salmon River",
   # "Multiple" (multi-site time series)
   "ACM, COU",           "Multiple",
   "CRC, LLR",           "Multiple",
@@ -60,5 +64,66 @@ waterbody_lu <- tribble(
   "KHS, LAP",           "Multiple",
   "LAP, LAW, SIX",      "Multiple",
   "LGW, UGR",           "Multiple",
-  "VC2, YFK",           "Multiple"
+  "VC2, YFK",           "Multiple",
+  "RAPH, WB1",          "Multiple"
+)
+
+# lookup table: CommonPopName -> WaterBody
+waterbody_pop_lu = tribble(
+  ~CommonPopName,   ~WaterBody_pop,
+  # chinook salmon
+  "CRLAP",          "Multiple",
+  "CRLOC",          "Lochsa River",
+  "CRLOL",          "Multiple",
+  "CRPOT",          "Potlatch River",
+  "GRCAT",          "Multiple",
+  "GRLOO",          "Lookingglass Creek",
+  "GRLOS",          "Multiple",
+  "GRMIN",          "Minam River",
+  "GRUMA",          "Multiple",
+  "GRWEN",          "Wenaha River",
+  "IRBSH",          "Big Sheep Creek",
+  "IRMAI",          "Imnaha River",
+  "MFBEA",          "Bear Valley Creek",
+  "MFBIG",          "Big Creek",
+  "MFMAR",          "Marsh Creek",
+  "SCLAW",          "Multiple",
+  "SCUMA",          "South Fork Clearwater River",
+  "SFEFS",          "East Fork South Fork Salmon River",
+  "SFMAI",          "Multiple",
+  "SFSEC",          "Secesh River",
+  "SNASO",          "Asotin Creek",
+  "SREFS",          "East Fork Salmon River",
+  "SRLEM",          "Lemhi River",
+  "SRLMA",          "Multiple",
+  "SRLSR",          "Multiple",
+  "SRNFS",          "Multiple",
+  "SRPAH",          "Pahsimeroi River",
+  "SRPAN",          "Panther Creek",
+  "SRUMA",          "upper Salmon River",
+  "SRVAL",          "Valley Creek",
+  "SRYFS",          "Yankee Fork Salmon River",
+  # steelhead
+  "CRLMA-s",        "Multiple",
+  "CRLOC-s",        "Lochsa River",
+  "CRLOL-s",        "Lolo Creek",
+  "CRSEL-s",        "Selway River",
+  "CRSFC-s",        "South Fork Clearwater River",
+  "GRJOS-s",        "Joseph Creek",
+  "GRLMT-s",        "Multiple",
+  "GRUMA-s",        "Multiple",
+  "GRWAL-s",        "Multiple",
+  "IRMAI-s",        "Imnaha River",
+  "MFBIG-s",        "Multiple",
+  "MFUMA-s",        "Multiple",
+  "SFMAI-s",        "Multiple",
+  "SFSEC-s",        "Secesh River",
+  "SNASO-s",        "Multiple",
+  "SREFS-s",        "Multiple",
+  "SRLEM-s",        "Lemhi River",
+  "SRLSR-s",        "Multiple",
+  "SRNFS-s",        "Multiple",
+  "SRPAH-s",        "Pahsimeroi River",
+  "SRPAN-s",        "Multiple",
+  "SRUMA-s",        "Multiple"
 )
