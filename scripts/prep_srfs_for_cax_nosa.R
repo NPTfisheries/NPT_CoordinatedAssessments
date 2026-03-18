@@ -1,11 +1,12 @@
 # ------------------------
 # Author(s): Mike Ackerman
-# Purpose: Prepare latest SnakeRiverFishStatus natural-origin spawner abundance (NOSA) estimates for upload to Coordinated Assessments (CAX) database. 
-#   The goal is to replace all past NOSA estimates uploaded by NPT with the latest and provide them in a standardized manner that makes clear
-#   IPTDS-based escapement estimates versus expanded spawner abundance estimates (accounting for unmonitored habitat). 
+# Purpose: Prepare latest SnakeRiverFishStatus natural-origin spawner abundance (NOSA) estimates for upload to Coordinated Assessments (CAX) 
+#   database. The goal is to delete some past estimates (e.g., duplicates or inappropriate estimates) uploaded by NPT plus update or provide 
+#   new estimates using the latest-and-greatest and provide them in a standardized manner that makes clear IPTDS-based escapement estimates
+#   versus expanded population abundance estimates (accounting for unmonitored habitat).
 # 
 # Created Date: January 23, 2026
-#   Last Modified: March 10, 2026
+#   Last Modified: March 18, 2026
 #
 # Notes:
 
@@ -20,7 +21,7 @@ library(sf)
 library(writexl)
 
 #-------------------------------------
-# read in SnakeRiverFishStatus results
+# read in time-stamped SnakeRiverFishStatus results
 srfs_results_files = list.files("data/SRFS",
                                 pattern = "(Chinook|Steelhead).*\\.xlsx$",
                                 full.names = TRUE) %>%
@@ -31,14 +32,16 @@ pop_esc_df  = map_dfr(srfs_results_files, ~ read_excel(.x, sheet = "Pop_Tot_Esc"
 site_esc_df = map_dfr(srfs_results_files, ~ read_excel(.x, sheet = "Site_Esc"))
 age_p_df    = map_dfr(srfs_results_files, ~ read_excel(.x, sheet = "Pop_Age_Props"))
 
-#----------------------------------------------------------------------------------
-# retrieve NOSA tbl from StreamNet API interface Access DB - need TimeSeriesID info
+#---------------------------------------------------------------------------------------
+# retrieve past NOSA tbl from StreamNet API interface Access DB - need TimeSeriesID info
 source("R/connectNPTCAdbase.R")
-con = connectNPTCAdbase("data/StreamNet API interface DES version 2024.1 - NPT.accdb")
+# NOTE: this is the past DB uploaded because we need previous TimeSeriesIDs provided to CAX when flagging records to delete or update and to make
+# sure new time series can be paired with past time series.
+con = connectNPTCAdbase("data/20250520 NPT StreamNet API interface DES version 2024.1.accdb")
 accdb_nosa_tbl = DBI::dbReadTable(con, "NOSA")
 DBI::dbDisconnect(con)
 
-# summarize TimeSeriesID info
+# summarize TimeSeriesID info previously used for CAX NOSA
 ts_tbl = accdb_nosa_tbl %>%
   select(CommonName, CommonPopName, SpawningYear, TimeSeriesID) %>%
   distinct(CommonName, CommonPopName, TimeSeriesID) %>%
@@ -57,7 +60,7 @@ site_ll = queryInterrogationMeta() %>%
             EscapementLat  = round(latitude, 4))
 
 #------------------------
-# retrieve data from CAX
+# retrieve up-to-date data from CAX
 
 # install rCAX, if needed
 # remotes:::install_github("nwfsc-cb/rCAX@*release")
@@ -77,6 +80,8 @@ cax_nosa = rcax_hli("NOSA", qlist = list(limit = 10000))
 npt_cax_nosa = cax_nosa %>%
   filter(submitagency == "NPT")
 
+# NOTE: Mike Banach (PSMFC deleted our records flagged for deletion on March 16, 2026 so old records no longer get flagged for deletion here).
+#   remainder of code still works with this in place.
 npt_cax_nosa_flagged = npt_cax_nosa %>%
   transmute(
     CommonName    = commonname,
@@ -116,7 +121,7 @@ sr_pop_df = pop_df %>%
     CommonPopName   = trt_pop_id,
     Run             = run,
     RecoveryDomain  = recoverydomain,
-    ESU_DPS         = esudps,
+    ESUDPS         = esudps,
     MajorPopGroup   = majorpopgroup,
     PopID           = id,           
     #NMFS_POPID      = nmfs_popid,
@@ -131,10 +136,11 @@ sr_pop_df = pop_df %>%
 # prep age_p_df to join to abundance results and formatted for CAX
 age_p_for_cax = age_p_df %>%
   select(species:upper95ci) %>%
-  mutate(across(c(median, lower95ci, upper95ci), ~ round(.x, 8)),
-         param = str_remove(param, "^p_"),
-         param = str_replace(param, "age_", "Age")) %>%
-  #group_by(species, spawn_yr, popid) %>%
+  mutate(
+    across(c(median, lower95ci, upper95ci), ~ round(.x, 8)),  # 8 decimals specified by DES
+    param = str_remove(param, "^p_"),
+    param = str_replace(param, "age_", "Age")
+  ) %>%
   pivot_longer(
     cols = c(median, lower95ci, upper95ci),
     names_to = "stat",
@@ -152,8 +158,45 @@ age_p_for_cax = age_p_df %>%
     names_glue = "{param}{stat}"
   )
 
+# create full set of expected age columns
+expected_age_cols = c(
+  as.vector(outer(
+    paste0("Age", 2:10),
+    c("Prop", "PropLowerLimit", "PropUpperLimit"),
+    paste0
+  )),
+  paste0(
+    "Age11Plus",
+    c("Prop", "PropLowerLimit", "PropUpperLimit")
+  )
+)
+
+# add any missing age columns as NA_real_
+missing_age_cols = setdiff(expected_age_cols, names(age_p_for_cax))
+if (length(missing_age_cols) > 0) {
+  age_p_for_cax[missing_age_cols] = NA_real_
+}
+
+# fill missing age fields with 0 when any age info exists; round all age fields to 3 decimals; setAgePropAlpha = 0.05
+age_p_for_cax = age_p_for_cax %>%
+  mutate(
+    has_age_info = if_any(all_of(expected_age_cols), ~ !is.na(.x))
+  ) %>%
+  mutate(
+    across(
+      all_of(expected_age_cols), ~ if_else(has_age_info & is.na(.x), 0.000, .x)
+    ),
+    across(
+      all_of(expected_age_cols), ~ round(.x, 3)
+    ),
+    AgePropAlpha = if_else(has_age_info, 0.05, NA_real_)
+  ) %>%
+  select(-has_age_info)
+
 #----------------------------------------------------------------
 # prep SnakeRiverFishStatus results to compare and upload to NOSA
+
+# waterbody_lookup is used to assign WaterBody based either on 1) PTAGIS sites used for estimate or 2) waterbodies in population
 source("R/waterbody_lookup.R")
 
 # the threshhold on which to consider a pop fully monitored by IPTDS, what do we want to set this at? 
@@ -272,8 +315,8 @@ srfs_prep_4_cax = srfs_base %>%
   group_by(CommonName, CommonPopName, SpawningYear, MetaComments) %>%
   mutate(
     StatusMA = case_when(
-      delete_old     & !is.na(ID) ~ "DELETE",
-      is.na(NOSAIJ)  & !is.na(ID) ~ "DELETE",
+      #delete_old     & !is.na(ID) ~ "DELETE",   # no longer needed after Mike Banach's deletions March 16, 2026
+      #is.na(NOSAIJ)  & !is.na(ID) ~ "DELETE",
       !is.na(NOSAIJ) & !is.na(ID) ~ "UPDATE",
       !is.na(NOSAIJ) & is.na(ID)  ~ "NEW"
     )
@@ -323,7 +366,10 @@ srfs_prep_4_cax = srfs_base %>%
          MetricLocation     = "npt-cdms.nezperce.org",
          MeasureLocation    = "npt-cdms.nezperce.org",
          OtherDataSources   = "IDFG, ODFW, WDFW, Biomark, QCI, SBT, CTUIR",
-         Publish            = "Yes") %>%
+         Publish            = "Yes",
+         UpdDate            = "2026/03/10 08:06:00",           # the latest timestamp on SnakeRiverFishStatus results used
+         DataEntry          = "Mike Ackerman",
+         DataEntryNote      = "Information compiled using results stored in the SnakeRiverFishStatus and code in the NPT_CAX GitHub repositories.") %>%
   # apply TimeSeriesIDs: apply existing ones for unexpanded ests, apply new ones for expanded ests
   left_join(
     ts_tbl,
@@ -332,13 +378,23 @@ srfs_prep_4_cax = srfs_base %>%
   {
     df <- .
     
-    new_ts_ids <- df %>%
+    # rows needing a new TimeSeriesID
+    new_ts_keys = df %>%
       filter(MetaComments == "STADEM, DABOM, and QRF" | is.na(TimeSeriesID)) %>%
       distinct(CommonName, CommonPopName, MetaComments) %>%
-      arrange(CommonName, CommonPopName, MetaComments) %>%
-      mutate(TimeSeriesID_new = max(ts_tbl$TimeSeriesID, na.rm = TRUE) + row_number())
+      arrange(CommonName, CommonPopName, MetaComments)
     
-    stopifnot(max(new_ts_ids$TimeSeriesID_new, na.rm = TRUE) <= 24999)
+    # existing IDs already known from your NOSA table
+    used_ts_ids = unique(ts_tbl$TimeSeriesID)
+    
+    # assign from top of NPT range downward; need to use top-down bc I don't know TimeSeriesIDs assigned in other HLI tables by NPT, used
+    # to avoid duplicating
+    available_ts_ids = setdiff(24999:22500, used_ts_ids)
+    
+    stopifnot(length(available_ts_ids) >= nrow(new_ts_keys))
+    
+    new_ts_ids = new_ts_keys %>%
+      mutate(TimeSeriesID_new = available_ts_ids[seq_len(n())])
     
     df %>%
       left_join(
@@ -353,6 +409,7 @@ srfs_prep_4_cax = srfs_base %>%
         )
       ) %>%
       select(-TimeSeriesID_new)
+    
   } %>%
   # assign CompilerRecordID using TimeSeriesID and SpawningYear
   mutate(
@@ -433,5 +490,43 @@ pop_id_qc = srfs_to_cax %>%
   ) %>%
   filter(is.na(PopID_expected) | PopID != PopID_expected) %>%
   select(CommonName, CommonPopName, PopID, PopID_expected)
+
+# age proportions generally sum to 1
+age_p_cols = c(paste0("Age", 2:10, "Prop"), "Age11PlusProp")
+age_p_qc = srfs_to_cax %>%
+  mutate(
+    has_age_info = if_any(all_of(age_p_cols), ~ !is.na(.x)),
+    age_p_sum = rowSums(across(all_of(age_p_cols)), na.rm = T),
+    prop_sum_ok = between(age_p_sum, 0.99, 1.01)
+  ) %>%
+  filter(has_age_info, !prop_sum_ok) %>%
+  select(
+    CommonName,
+    CommonPopName,
+    SpawningYear,
+    MetaComments,
+    all_of(age_p_cols),
+    age_p_sum
+  )
+
+#---------------------------------------------------------------------------------------------------------------------------
+# replace NOSA table in most recent Access DB (for unknown reasons, I needed to use RODBC instead of DBI to write the table)
+library(RODBC)
+
+# re-connect to access db
+channel = odbcConnectAccess2007("data/20260317 NPT StreamNet API interface DES version 2024.1.accdb")
+
+# remove the existing NOSA table
+sqlDrop(channel, "NOSA", errors = FALSE)
+
+# write srfs_to_cax to db
+sqlSave(channel, srfs_to_cax, tablename = "NOSA", rownames = FALSE)
+
+# disconnect from access db
+close(channel)
+
+# NOTE: After pushing srfs_to_cax to NOSA table in access database, make the following changes to data formats:
+# ID: Indexed = Yes (No Duplicates)
+# CompilerRecordID: Required = Yes, Indexed = Yes (No Duplicates)
 
 ### END SCRIPT

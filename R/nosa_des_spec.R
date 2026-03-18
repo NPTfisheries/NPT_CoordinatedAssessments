@@ -6,7 +6,7 @@ nosa_des_spec = tribble(
   "CommonName",           "chr",  50,
   "Run",                  "chr",  20,
   "RecoveryDomain",       "chr",  255,
-  "ESU_DPS",              "chr",  255,
+  "ESUDPS",              "chr",  255,
   "MajorPopGroup",        "chr",  255,
   "PopID",                "int",  NA,
   "CommonPopName",        "chr",  255,
@@ -105,7 +105,12 @@ nosa_des_spec = tribble(
   "MetaComments",         "chr",  NA,
   # appendix a (doesn't include all columns there)
   "SubmitAgency",         "chr",  15,
-  "Publish",              "chr",  3
+  "RefID",                "int",  NA,
+  "UpdDate",             "dttm",  NA,
+  "DataEntry",            "chr",  50,
+  "DataEntryNotes",       "chr",  NA,
+  "Publish",              "chr",  3,
+  "CompilerRecordID",     "chr",  36
 )
 
 # function to apply column orders according to cax data exchange standards
