@@ -6,9 +6,10 @@
 #   versus expanded population abundance estimates (accounting for unmonitored habitat).
 # 
 # Created Date: January 23, 2026
-#   Last Modified: March 18, 2026
+#   Last Modified: March 19, 2026
 #
-# Notes:
+# Notes: This script should NOT be used for future preps. It will no longer work because I was pulling old versions of e.g., CAX tables.
+#   Instead, it was intended to provide a clean slate for future updates to CAX NOSA tables.
 
 # clear environment
 rm(list = ls())
