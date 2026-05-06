@@ -1,0 +1,193 @@
+# ------------------------
+# Author(s): Mike Ackerman
+# Purpose: Prepare LGR escapement and spawner abundance results from Bill Young's fall Chinook run reconstruction work to push to 
+#   Coordinated Assessments natural-origin spawner abundance (NOSA) table.
+# 
+# Created Date: May 6, 2026
+#   Last Modified: 
+#
+# Notes: 
+
+# clear environment
+rm(list = ls())
+
+# load libraries
+library(readxl)
+library(tidyverse)
+library(writexl)
+
+#----------------------------------
+# retrieve population and NOSA info from CAX
+
+# remotes:::install_github("nwfsc-cb/rCAX@*release")
+library(rCAX)
+
+# retrieve key, if needed
+#cax_key = Sys.getenv("CAX_KEY")
+
+# retrieve populations table from CAX
+fchnk_pop_df = rcax_table_query(tablename = "Populations") %>%
+  filter(esudps == "Salmon, Chinook (Snake River fall-run ESU)") %>%
+  select(
+    CommonName      = commonname,
+    CommonPopName   = trt_pop_id,
+    Run             = run,
+    RecoveryDomain  = recoverydomain,
+    ESUDPS         = esudps,
+    MajorPopGroup   = majorpopgroup,
+    PopID           = id,           
+  )
+
+# retrieve NOSA table, up to 10,000 records (by default, only retrieves 1,000)
+npt_cax_nosa = rcax_hli("NOSA", qlist = list(limit = 10000)) %>%
+  filter(submitagency == "NPT",
+         compilerrecordid != "") %>%
+  select(commonpopname, compilerrecordid) %>%
+  mutate(timeseriesid = stringr::str_sub(compilerrecordid, 1, 5))
+
+# get the next two available time series IDs
+avail_ts_ids        = setdiff(22500:24999, as.integer(npt_cax_nosa$timeseriesid))[1:2] 
+names(avail_ts_ids) = c("Escapement", "NOSA")
+
+#-------------------------------------------------------------
+# read in time-stamped fall chinook run reconstruction results
+fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR incl AD & NO totals disp fidelity 20260506.xlsx",
+                         sheet = "Esc Abv",
+                         range = "A8:AN58") %>%
+  select(
+    run_year                    = year,
+    # escapement to LGR
+    esc_2_lgr_tot_adults        = `Total adults`,
+    esc_2_lgr_tot_jacks         = `Total jacks`,
+    esc_2_lgr_tot               = `total SR fchnk`,
+    esc_2_lgr_nat_adults        = `Natural adult`,
+    esc_2_lgr_hat_adults        = `Hatchery adults`,
+    esc_2_lgr_nat_jacks         = `Natural jack`,
+    esc_2_lgr_hat_jacks         = `hatchery jack`,
+    # escapement above LGR, adjusted for broodstock removals and fallback
+    esc_abv_lgr_hat_adults      = `Hat adults`,
+    esc_abv_lgr_hat_jacks       = `Hat jacks`,
+    esc_abv_lgr_nat_adults      = `Nat adults`,
+    esc_abv_lgr_nat_jacks       = `Nat Jacks`,
+    # returns prior to August 18
+    b4_818_hat_adults           = `Adult Hat`,
+    b4_818_nat_adults           = `Adult Nat`,
+    # total escapement above LGR, adjusted for returns prior to Aug 18
+    tot_esc_abv_lgr_hat_adults  = `HAT adults...15`,
+    tot_esc_abv_lgr_nat_adult   = `NAT adults...16`,
+    tot_esc_abv_lgr_tot_adults  = `All adults`,
+    tot_esc_abv_lgr_phos_adults = `HOR to LGR adult`,
+    tot_esc_abv_lgr_phos_all    = `HOR to LGR all`,
+    esc_data_sourc              = `Escapement data source`,
+    # final spawner abundance above LGR, adjusted for harvest above LGR & volunteers to NPTH
+    fin_abv_lgr_hosa_adults     = `HAT adults...33`,
+    fin_abv_lgr_hosa_jacks      = `HAT jacks`,
+    fin_abv_lgr_nosa_adults     = `NAT adults...35`,
+    fin_abv_lgr_nosa_jacks      = `NAT jacks`,
+    fin_abv_lgr_tot_adults      = `Total Adults`,
+    fin_abv_lgr_tot_all         = `Total all fish (adlt+jack)`,
+    fin_abv_lgr_phos_adults     = `pHOS adult`,
+    fin_abv_lgr_phos_all        = `pHOS all`
+  ) %>%
+  mutate(
+    run_year = as.integer(run_year),
+    across(
+      .cols = where(is.double) & !contains("phos"),
+      .fns  = ~ round(.x, 0)
+    ),
+    across(
+      .cols = where(is.double) & contains("phos"),
+      .fns  = ~ round(.x, 3)
+    )
+  )
+
+#--------------------------
+# prep fchnk_lgr_df for CAX
+fchnk_prep_df = fchnk_lgr_df %>%
+  mutate(
+    esc_abv_lgr_nat_total = esc_abv_lgr_nat_adults  + esc_abv_lgr_nat_jacks,
+    fin_abv_lgr_nosa      = fin_abv_lgr_nosa_adults + fin_abv_lgr_nosa_jacks
+  ) %>%
+  # build EstimateType Escapement vs. NOSA
+  transmute(
+    SpawningYear = run_year,
+    # Escapement estimates
+    Escapement_NOSAIJ = esc_abv_lgr_nat_total,
+    Escapement_NOSAEJ = esc_abv_lgr_nat_adults,
+    Escapement_pHOSij = tot_esc_abv_lgr_phos_all,
+    Escapement_pHOSej = tot_esc_abv_lgr_phos_adults,
+    # NOSA estimates
+    NOSA_NOSAIJ = fin_abv_lgr_nosa,
+    NOSA_NOSAEJ = fin_abv_lgr_nosa_adults,
+    NOSA_pHOSij = fin_abv_lgr_phos_all,
+    NOSA_pHOSej = fin_abv_lgr_phos_adults
+  ) %>%
+  pivot_longer(
+    cols      = -SpawningYear,
+    names_to  = c("EstimateType", ".value"),
+    names_sep = "_"
+  ) %>%
+  mutate(
+    CommonPopName = "SNMAI",
+    # location info
+    WaterBody      = "Snake River",
+    EscapementLong = if_else(EstimateType == "Escapement", -117.433225, NA_real_),  # lat/lon from PTAGIS for GRA
+    EscapementLat  = if_else(EstimateType == "Escapement", 46.657760,   NA_real_),
+    PopFit         = "Portion",
+    PopFitNotes    = "Estimate reflects fish returning to or above Lower Granite Dam and therefore represents only a portion of the total population.",
+    # add TimeSeriesID and CompilerRecordID
+    TimeSeriesID     = unname(avail_ts_ids[EstimateType]),
+    CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear),
+    # estimate info
+    EscapementTiming      = if_else(EstimateType == "Escapement", "Aug-Dec", NA_character_),
+    MethodNumber          = 1, # just needs to be unique to population and year
+    BestValue             = "Yes",
+    ProtMethName          = "Young et al. (2022); Nez Perce Tribe Adult Weir Data Collection v1.0",
+    ProtMethURL           = "https://www.monitoringresources.org/Document/Protocol/Details/2247",
+    ProtMethDocumentation = "Young, W., S. Rosenberger, J. Bumgarner, J. Fortier, B. Sandford, and A. Harris. 2023. Snake River fall Chinook salmon
+                             Lower Granite Dam run reconstruction report; return year 2022. Prepared for U.S. Fish and Wildlife Service, Lower
+                             Snake River Compensation Plan, United States Department of Interior Grant No. F21AP00406-00. Boise, Idaho.",
+    MethodAdjustments     = case_when(
+      EstimateType == "Escapement" ~ "Estimate of escapement past LGR adjusted for broodstock removals at LGR and fallback.",
+      EstimateType == "NOSA"       ~ "Escapement estimate further adjusted for harvest above LGR plus volunteer returns to Nez Perce Tribal Hatchery; represents fish available to spawn."
+    ),
+    NullRecord            = "No",
+    DataStatus            = "Reviewed",
+    MetaComments          = "Snake River Fall Chinook Run Reconstruction",
+    HLI                   = "NOSA",
+    # data info
+    OtherDataSources  = "IDFG | NOAA | Fish Passage Center | Idaho Power",
+    IndicatorLocation = "npt-cdms.nezperce.org",
+    MetricLocation    = "npt-cdms.nezperce.org",
+    MeasureLocation   = "npt-cdms.nezperce.org",
+    # contact and submittal info
+    ContactAgency      = "Nez Perce Tribe",
+    ContactAgy         = "NPT",
+    ContactPersonFirst = "Bill",
+    ContactPersonLast  = "Young",
+    ContactPhone       = "208-621-4909",
+    ContactEmail       = "billy@nezperce.org",
+    SubmitAgency       = "NPT",
+    DataEntry          = "Mike Ackerman",
+    UpdDate            = "2026/05/06 07:10:00", # the latest timestamp on fall chinook run reconstruction results stored in NPT_CAX
+    Publish            = "Yes",
+    DataEntryNote      = "Information compiled from Snake River fall Chinook run reconstruction outputs and associated code maintained in the NPT_CAX GitHub repository."
+  ) %>%
+  left_join(fchnk_pop_df, by = "CommonPopName")
+
+#-------------------------------------------------------------
+# reorder and QC columns to follow CAX data exchange standards
+source("R/nosa_des_spec.R")
+
+# re-order & add missing columns
+fchnk_to_cax = apply_cax_des_col_order(fchnk_prep_df, nosa_des_spec)
+
+# QC column types
+qc_report = qc_against_des_spec(fchnk_to_cax, nosa_des_spec)
+
+# write to excel
+write_xlsx(fchnk_to_cax, path = paste0("output/Fall_Chinook_4_CAX_NOSA_", Sys.Date(), ".xlsx"))
+
+### END SCRIPT
+
+
