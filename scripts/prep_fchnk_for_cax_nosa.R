@@ -53,7 +53,7 @@ names(avail_ts_ids) = c("Escapement", "NOSA")
 # read in time-stamped fall chinook run reconstruction results
 fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR incl AD & NO totals disp fidelity 20260506.xlsx",
                          sheet = "Esc Abv",
-                         range = "A8:AN58") %>%
+                         range = "A8:AN59") %>%
   select(
     run_year                    = year,
     # escapement to LGR
@@ -88,6 +88,17 @@ fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR inc
     fin_abv_lgr_tot_all         = `Total all fish (adlt+jack)`,
     fin_abv_lgr_phos_adults     = `pHOS adult`,
     fin_abv_lgr_phos_all        = `pHOS all`
+  ) 
+
+#--------------------------
+# prep fchnk_lgr_df for CAX
+fchnk_prep_df = fchnk_lgr_df %>%
+  mutate(
+    esc_2_lgr_nat_all     = rowSums(across(c(esc_2_lgr_nat_adults, esc_2_lgr_nat_jacks)), na.rm = TRUE),
+    esc_2_lgr_phos_all    = rowSums(across(c(esc_2_lgr_hat_adults, esc_2_lgr_hat_jacks)), na.rm = TRUE) / esc_2_lgr_tot,
+    esc_2_lgr_phos_adults = esc_2_lgr_hat_adults / esc_2_lgr_tot_adults,
+    #esc_abv_lgr_nat_all   = rowSums(across(c(esc_abv_lgr_nat_adults, esc_abv_lgr_nat_jacks)), na.rm = TRUE),
+    fin_abv_lgr_nosa      = rowSums(across(c(fin_abv_lgr_nosa_adults, fin_abv_lgr_nosa_jacks)), na.rm = TRUE)
   ) %>%
   mutate(
     run_year = as.integer(run_year),
@@ -99,23 +110,15 @@ fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR inc
       .cols = where(is.double) & contains("phos"),
       .fns  = ~ round(.x, 3)
     )
-  )
-
-#--------------------------
-# prep fchnk_lgr_df for CAX
-fchnk_prep_df = fchnk_lgr_df %>%
-  mutate(
-    esc_abv_lgr_nat_total = esc_abv_lgr_nat_adults  + esc_abv_lgr_nat_jacks,
-    fin_abv_lgr_nosa      = fin_abv_lgr_nosa_adults + fin_abv_lgr_nosa_jacks
   ) %>%
   # build EstimateType Escapement vs. NOSA
   transmute(
     SpawningYear = run_year,
     # Escapement estimates
-    Escapement_NOSAIJ = esc_abv_lgr_nat_total,
-    Escapement_NOSAEJ = esc_abv_lgr_nat_adults,
-    Escapement_pHOSij = tot_esc_abv_lgr_phos_all,
-    Escapement_pHOSej = tot_esc_abv_lgr_phos_adults,
+    Escapement_NOSAIJ = esc_2_lgr_nat_all,
+    Escapement_NOSAEJ = esc_2_lgr_nat_adults,
+    Escapement_pHOSij = esc_2_lgr_phos_all,
+    Escapement_pHOSej = esc_2_lgr_phos_adults,
     # NOSA estimates
     NOSA_NOSAIJ = fin_abv_lgr_nosa,
     NOSA_NOSAEJ = fin_abv_lgr_nosa_adults,
@@ -148,8 +151,8 @@ fchnk_prep_df = fchnk_lgr_df %>%
                              Lower Granite Dam run reconstruction report; return year 2022. Prepared for U.S. Fish and Wildlife Service, Lower
                              Snake River Compensation Plan, United States Department of Interior Grant No. F21AP00406-00. Boise, Idaho.",
     MethodAdjustments     = case_when(
-      EstimateType == "Escapement" ~ "Estimate of escapement past LGR adjusted for broodstock removals at LGR and fallback.",
-      EstimateType == "NOSA"       ~ "Escapement estimate further adjusted for harvest above LGR plus volunteer returns to Nez Perce Tribal Hatchery; represents fish available to spawn."
+      EstimateType == "Escapement" ~ "Estimate of escapement to LGR, unadjusted for fallback, broodstock removals, and harvest above LGR.",
+      EstimateType == "NOSA"       ~ "Estimate of escapement past LGR adjusted for fallback, broodstock removals, and harvest above LGR."
     ),
     NullRecord            = "No",
     DataStatus            = "Reviewed",
