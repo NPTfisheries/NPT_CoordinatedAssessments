@@ -145,11 +145,24 @@ fchnk_prep_df = fchnk_lgr_df %>%
     EscapementTiming      = if_else(EstimateType == "Escapement", "Aug-Dec", NA_character_),
     MethodNumber          = 1, # just needs to be unique to population and year
     BestValue             = "Yes",
-    ProtMethName          = "Young et al. (2022); Nez Perce Tribe Adult Weir Data Collection v1.0",
-    ProtMethURL           = "https://www.monitoringresources.org/Document/Protocol/Details/2247",
-    ProtMethDocumentation = "Young, W., S. Rosenberger, J. Bumgarner, J. Fortier, B. Sandford, and A. Harris. 2023. Snake River fall Chinook salmon
-                             Lower Granite Dam run reconstruction report; return year 2022. Prepared for U.S. Fish and Wildlife Service, Lower
-                             Snake River Compensation Plan, United States Department of Interior Grant No. F21AP00406-00. Boise, Idaho.",
+    ProtMethName          = case_when(
+      SpawningYear %in% 1975:1990               ~ "Unknown run reconstruction.",
+      SpawningYear ==   1991                    ~ "Cooney, T. (1991).",
+      SpawningYear %in% c(1992:1994, 1996:1999) ~ "Lavoy, L. WDFW, Stock composition report, Columbia River Laboratory.",
+      SpawningYear ==   1995                    ~ "Lavoy, L. and G. Mendel (1996).",
+      SpawningYear %in% 2000:2002               ~ "Sand, N.J. WDFW, run reconstruction.",
+      SpawningYear %in% 2003:2019               ~ "Young et al. (2022).",
+      SpawningYear %in% 2020:2025               ~ "Young et al. (2023)."
+    ),
+    ProtMethDocumentation = case_when(
+      SpawningYear %in% 1975:1990               ~ "T. Cooney, pers. comm.",
+      SpawningYear ==   1991                    ~ "Cooney, T. 1991. Estimation of Snake River fall chinook returns to Ice Harbor, LF Hatchery, and over Lower Granite. Washington Department of Fisheries memorandum, May 7, 1991.",
+      SpawningYear %in% c(1992:1994, 1996:1999) ~ "LaVoy, L.W. 1993. Stock composition of fall Chinook at Lower Granite Dam in 1992. Washington Department of Fish and Wildlife, Columbia River Laboratory Report.",
+      SpawningYear ==   1995                    ~ "LaVoy, L.W., and G. Mendel. 1996. Stock composition of fall Chinook at Lower Granite Dam in 1995. Washington Department of Fish and Wildlife, Columbia River Laboratory Report 96-13, Battle Ground.",
+      SpawningYear %in% 2000:2002               ~ "Sand, N.J. 2003. WDFW Annual Report.",
+      SpawningYear %in% 2003:2019               ~ "Young, W.P., S. Rosenberger, and D. Milks. 2022. Snake River Fall Chinook Salmon Run Reconstruction at Lower Granite Dam; Methods for Retrospective Analysis. Nez Perce Tribe, Department of Fisheries Resources Management.",
+      SpawningYear %in% 2020:2025               ~ "Young, W., S. Rosenberger, J. Bumgarner, J. Fortier, B. Sandford, and A. Harris. 2023. Snake River fall Chinook salmon Lower Granite Dam run reconstruction report; return year 2022.",
+    ),
     MethodAdjustments     = case_when(
       EstimateType == "Escapement" ~ "Estimate of escapement to LGR, unadjusted for fallback, broodstock removals, and harvest above LGR.",
       EstimateType == "NOSA"       ~ "Estimate of escapement past LGR adjusted for fallback, broodstock removals, and harvest above LGR."
@@ -190,6 +203,28 @@ qc_report = qc_against_des_spec(fchnk_to_cax, nosa_des_spec)
 
 # write to excel
 write_xlsx(fchnk_to_cax, path = paste0("output/Fall_Chinook_4_CAX_NOSA_", Sys.Date(), ".xlsx"))
+
+#---------------------------------------------------------------------------------------------------------------------------
+# replace NOSA table in most recent Access DB (for unknown reasons, I needed to use RODBC instead of DBI to write the table)
+library(RODBC)
+
+# re-connect to access db
+channel = odbcConnectAccess2007("data/20260317 NPT StreamNet API interface DES version 2024.1.accdb")
+
+# remove the existing NOSA table
+sqlDrop(channel, "fchnk_NOSA", errors = FALSE)
+
+# write srfs_to_cax to db
+sqlSave(channel, fchnk_to_cax, tablename = "fchnk_NOSA", rownames = FALSE)
+
+# disconnect from access db
+close(channel)
+
+# NOTE: After pushing to access database, make the following changes to data formats:
+# ID: Indexed = Yes (No Duplicates)
+# CompilerRecordID: Required = Yes, Indexed = Yes (No Duplicates)
+
+### END SCRIPT
 
 ### END SCRIPT
 
