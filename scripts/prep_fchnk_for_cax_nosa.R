@@ -38,15 +38,24 @@ fchnk_pop_df = rcax_table_query(tablename = "Populations") %>%
     PopID           = id,           
   )
 
-# retrieve NOSA table, up to 10,000 records (by default, only retrieves 1,000)
-npt_cax_nosa = rcax_hli("NOSA", qlist = list(limit = 10000)) %>%
+# retrieve NPT tables from CAX; need to see which TimeSeriesIDs have been used by NPT
+npt_cax = rcax_hli("NOSA", qlist = list(limit = 10000)) %>%
+  transmute(
+    submitagency = submitagency,
+    compilerrecordid = compilerrecordid,
+    tbl = "NOSA"
+  ) %>%
+  bind_rows(rcax_hli("JuvOut", qlist = list(limit = 10000)) %>%
+              transmute(submitagency = submitagency,
+                        compilerrecordid = compilerrecordid,
+                        tbl = "JuvOut")
+            ) %>%
   filter(submitagency == "NPT",
          compilerrecordid != "") %>%
-  select(commonpopname, compilerrecordid) %>%
   mutate(timeseriesid = stringr::str_sub(compilerrecordid, 1, 5))
 
 # get the next two available time series IDs
-avail_ts_ids        = setdiff(22500:24999, as.integer(npt_cax_nosa$timeseriesid))[1:2] 
+avail_ts_ids        = setdiff(22500:24999, as.integer(npt_cax$timeseriesid))[1:2] 
 names(avail_ts_ids) = c("Escapement", "NOSA")
 
 #-------------------------------------------------------------
@@ -133,7 +142,10 @@ fchnk_prep_df = fchnk_lgr_df %>%
   mutate(
     CommonPopName = "SNMAI",
     # location info
-    WaterBody      = "Snake River",
+    WaterBody      = case_when(
+      EstimateType == "Escapement" ~ "Snake River",
+      EstimateType == "NOSA"       ~ "Multiple"
+    ),
     EscapementLong = if_else(EstimateType == "Escapement", -117.433225, NA_real_),  # lat/lon from PTAGIS for GRA
     EscapementLat  = if_else(EstimateType == "Escapement", 46.657760,   NA_real_),
     PopFit         = "Portion",
@@ -212,10 +224,10 @@ library(RODBC)
 channel = odbcConnectAccess2007("data/20260317 NPT StreamNet API interface DES version 2024.1.accdb")
 
 # remove the existing NOSA table
-sqlDrop(channel, "fchnk_NOSA", errors = FALSE)
+sqlDrop(channel, "NOSA", errors = FALSE)
 
 # write srfs_to_cax to db
-sqlSave(channel, fchnk_to_cax, tablename = "fchnk_NOSA", rownames = FALSE)
+sqlSave(channel, fchnk_to_cax, tablename = "NOSA", rownames = FALSE)
 
 # disconnect from access db
 close(channel)
@@ -225,7 +237,3 @@ close(channel)
 # CompilerRecordID: Required = Yes, Indexed = Yes (No Duplicates)
 
 ### END SCRIPT
-
-### END SCRIPT
-
-

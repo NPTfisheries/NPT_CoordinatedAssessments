@@ -6,7 +6,7 @@ nosa_des_spec = tribble(
   "CommonName",           "chr",  50,
   "Run",                  "chr",  20,
   "RecoveryDomain",       "chr",  255,
-  "ESUDPS",              "chr",  255,
+  "ESUDPS",               "chr",  255,
   "MajorPopGroup",        "chr",  255,
   "PopID",                "int",  NA,
   "CommonPopName",        "chr",  255,
