@@ -4,9 +4,9 @@
 #   Coordinated Assessments natural-origin spawner abundance (NOSA) table.
 # 
 # Created Date: May 6, 2026
-#   Last Modified: May 12, 2026
+#   Last Modified: July 9, 2026
 #
-# Notes: 
+# Notes: Added TSAEJ & TSAIJ July 9, 2026. Code was also re-vised so that we can over-write existing records for SNMAI in CAX.
 
 # clear environment
 rm(list = ls())
@@ -33,7 +33,7 @@ fchnk_pop_df = rcax_table_query(tablename = "Populations") %>%
     CommonPopName   = trt_pop_id,
     Run             = run,
     RecoveryDomain  = recoverydomain,
-    ESUDPS         = esudps,
+    ESUDPS          = esudps,
     MajorPopGroup   = majorpopgroup,
     PopID           = id,           
   )
@@ -41,26 +41,40 @@ fchnk_pop_df = rcax_table_query(tablename = "Populations") %>%
 # retrieve NPT tables from CAX; need to see which TimeSeriesIDs have been used by NPT
 npt_cax = rcax_hli("NOSA", qlist = list(limit = 10000)) %>%
   transmute(
-    submitagency = submitagency,
+    submitagency     = submitagency,
     compilerrecordid = compilerrecordid,
-    tbl = "NOSA"
+    tbl              = "NOSA"
   ) %>%
   bind_rows(rcax_hli("JuvOut", qlist = list(limit = 10000)) %>%
-              transmute(submitagency = submitagency,
-                        compilerrecordid = compilerrecordid,
-                        tbl = "JuvOut")
+              transmute(
+                submitagency     = submitagency,
+                compilerrecordid = compilerrecordid,
+                tbl              = "JuvOut"
+              )
             ) %>%
   filter(submitagency == "NPT",
          compilerrecordid != "") %>%
   mutate(timeseriesid = stringr::str_sub(compilerrecordid, 1, 5))
 
+# retrieve existing IDs for SNMAI in CAX
+id_tbl = rcax_hli("NOSA", qlist = list(limit = 10000)) %>%
+  filter(submitagency  == "NPT",
+         commonpopname == "SNMAI") %>%
+  transmute(
+    ID            = id,
+    CommonName    = commonname,
+    CommonPopName = commonpopname,
+    SpawningYear  = spawningyear,
+    EstimateType  = estimatetype
+  )
+
 # get the next two available time series IDs
-avail_ts_ids        = setdiff(22500:24999, as.integer(npt_cax$timeseriesid))[1:2] 
-names(avail_ts_ids) = c("Escapement", "NOSA")
+#avail_ts_ids        = setdiff(22500:24999, as.integer(npt_cax$timeseriesid))[1:2] 
+#names(avail_ts_ids) = c("Escapement", "NOSA")
 
 #-------------------------------------------------------------
 # read in time-stamped fall chinook run reconstruction results
-fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR incl AD & NO totals disp fidelity 20260506.xlsx",
+fchnk_lgr_df = read_xlsx(path  = "data/Fall Chinook Run Rec/escp to & abv LGR incl AD & NO totals disp fidelity 20260506.xlsx",
                          sheet = "Esc Abv",
                          range = "A8:AN59") %>%
   select(
@@ -129,11 +143,15 @@ fchnk_prep_df = fchnk_lgr_df %>%
     # Escapement estimates
     Escapement_NOSAIJ = esc_2_lgr_nat_all,
     Escapement_NOSAEJ = esc_2_lgr_nat_adults,
+    Escapement_TSAIJ  = esc_2_lgr_tot, 
+    Escapement_TSAEJ  = esc_2_lgr_tot_adults,
     Escapement_pHOSij = esc_2_lgr_phos_all,
     Escapement_pHOSej = esc_2_lgr_phos_adults,
     # NOSA estimates
     NOSA_NOSAIJ = fin_abv_lgr_nosa,
     NOSA_NOSAEJ = fin_abv_lgr_nosa_adults,
+    NOSA_TSAIJ  = fin_abv_lgr_tot_all,
+    NOSA_TSAEJ  = fin_abv_lgr_tot_adults,
     NOSA_pHOSij = fin_abv_lgr_phos_all,
     NOSA_pHOSej = fin_abv_lgr_phos_adults
   ) %>%
@@ -154,7 +172,11 @@ fchnk_prep_df = fchnk_lgr_df %>%
     PopFit         = "Portion",
     PopFitNotes    = "Estimate reflects fish returning to or above Lower Granite Dam and therefore represents only a portion of the total population.",
     # add TimeSeriesID and CompilerRecordID
-    TimeSeriesID     = unname(avail_ts_ids[EstimateType]),
+    # TimeSeriesID     = unname(avail_ts_ids[EstimateType]),
+    TimeSeriesID     = case_when(
+      EstimateType == "Escapement" ~ 22503, # replaced TimeSeriesID: these are now the TimeSeriesIDs used by NPT for SNMAI in CAX
+      EstimateType == "NOSA"       ~ 22507
+    ),
     CompilerRecordID = paste0(TimeSeriesID, "-", SpawningYear),
     # estimate info
     EscapementTiming      = if_else(EstimateType == "Escapement", "Aug-Dec", NA_character_),
@@ -204,7 +226,8 @@ fchnk_prep_df = fchnk_lgr_df %>%
     Publish            = "Yes",
     DataEntryNote      = "Information compiled from Snake River fall Chinook run reconstruction outputs and associated code maintained in the NPT_CAX GitHub repository."
   ) %>%
-  left_join(fchnk_pop_df, by = "CommonPopName")
+  left_join(fchnk_pop_df, by = "CommonPopName") %>%
+  left_join(id_tbl, by = c("CommonName", "CommonPopName", "SpawningYear", "EstimateType"))
 
 #-------------------------------------------------------------
 # reorder and QC columns to follow CAX data exchange standards
