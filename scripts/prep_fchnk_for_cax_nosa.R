@@ -99,6 +99,9 @@ fchnk_lgr_df = read_xlsx(path = "data/Fall Chinook Run Rec/escp to & abv LGR inc
     fin_abv_lgr_phos_all        = `pHOS all`
   ) 
 
+# write out fchnk_lgr_df for RK, July 9, 2026
+# write_csv(fchnk_lgr_df, "output/fchnk_lgr_rr_escapements.csv")
+
 #--------------------------
 # prep fchnk_lgr_df for CAX
 fchnk_prep_df = fchnk_lgr_df %>%
